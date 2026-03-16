@@ -2,12 +2,16 @@ name: 📬 Newsletter Mensual
 
 on:
   schedule:
-    # Se ejecuta cada viernes; el job check-friday decide si es el primero del mes
+    # Cada viernes — el job check-friday decide si es el primero del mes
     - cron: "0 11 * * 5"
   workflow_dispatch:
     inputs:
+      since_date:
+        description: "Fecha desde (YYYY-MM-DD). Vacío = hace 31 días"
+        required: false
+        default: ""
       dry_run:
-        description: "Dry run (no envía, solo muestra el resultado)"
+        description: "Dry run — genera HTML sin enviar"
         required: false
         default: "false"
         type: choice
@@ -21,55 +25,64 @@ on:
 
 jobs:
   check-first-friday:
-    name: Comprobar si es el primer viernes del mes
+    name: ¿Es el primer viernes del mes?
     runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
+      since_date: ${{ steps.check.outputs.since_date }}
 
     steps:
       - id: check
-        name: Verificar primer viernes del mes
         run: |
           DAY=$(date +%d)
           FORCED="${{ github.event.inputs.force }}"
+          INPUT_SINCE="${{ github.event.inputs.since_date }}"
+          SINCE=${INPUT_SINCE:-$(date -d "31 days ago" +%Y-%m-%d)}
+
           echo "Día del mes: $DAY"
+          echo "since_date=$SINCE" >> $GITHUB_OUTPUT
 
           if [[ "$FORCED" == "true" ]]; then
             echo "⚡ Forzado manualmente."
             echo "should_run=true" >> $GITHUB_OUTPUT
-          elif (( DAY <= 7 )); then
-            echo "✅ Día $DAY ≤ 7 → es el primer viernes del mes."
+          elif (( 10#$DAY <= 7 )); then
+            echo "✅ Día $DAY ≤ 7 → primer viernes del mes."
             echo "should_run=true" >> $GITHUB_OUTPUT
           else
-            echo "⏭️  Día $DAY > 7 → no es el primer viernes del mes."
+            echo "⏭️  Día $DAY > 7 → no es el primer viernes."
             echo "should_run=false" >> $GITHUB_OUTPUT
           fi
 
   send-monthly:
-    name: Enviar newsletter mensual
+    name: Enviar newsletter mensual (digest)
     needs: check-first-friday
     if: needs.check-first-friday.outputs.should_run == 'true'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout waiq-news
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Setup Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "pip"
+          cache: pip
 
       - name: Instalar dependencias
-        run: pip install requests pyyaml
+        run: pip install -r requirements.txt
 
-      - name: Enviar newsletter
+      - name: Ejecutar newsletter
         env:
-          MAILERLITE_API_KEY: ${{ secrets.MAILERLITE_API_KEY }}
+          MAILERLITE_API_KEY:  ${{ secrets.MAILERLITE_API_KEY }}
           MAILERLITE_GROUP_ID: ${{ secrets.MAILERLITE_GROUP_ID }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          MODE: "digest"
-          DAYS_BACK: "31"
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-        run: python .github/scripts/send_newsletter.py
+          FROM_NAME:  ${{ secrets.FROM_NAME }}
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
+          HUGO_SINGLE_ENDPOINT: ${{ secrets.HUGO_SINGLE_ENDPOINT }}
+          HUGO_DIGEST_ENDPOINT: ${{ secrets.HUGO_DIGEST_ENDPOINT }}
+          SITE_BASE_URL: ${{ secrets.SITE_BASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MODE:       digest
+          SINCE_DATE: ${{ needs.check-first-friday.outputs.since_date }}
+          DRY_RUN:    ${{ github.event.inputs.dry_run || 'false' }}
+        run: python main.py

@@ -2,12 +2,12 @@ name: 📬 Newsletter Semanal
 
 on:
   schedule:
-    # Cada viernes a las 11:00 UTC (12:00 España hora invierno / 13:00 verano)
+    # Cada viernes a las 11:00 UTC (12:00 España invierno / 13:00 verano)
     - cron: "0 11 * * 5"
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Dry run (no envía, solo muestra el resultado)"
+        description: "Dry run — genera HTML sin enviar"
         required: false
         default: "false"
         type: choice
@@ -15,27 +15,38 @@ on:
 
 jobs:
   send-weekly:
-    name: Enviar newsletter semanal
+    name: Enviar newsletter semanal (single)
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout waiq-news
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Setup Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "pip"
+          cache: pip
 
       - name: Instalar dependencias
-        run: pip install requests pyyaml
+        run: pip install -r requirements.txt
 
-      - name: Enviar newsletter
+      - name: Ejecutar newsletter
         env:
-          MAILERLITE_API_KEY: ${{ secrets.MAILERLITE_API_KEY }}
+          # MailerLite
+          MAILERLITE_API_KEY:  ${{ secrets.MAILERLITE_API_KEY }}
           MAILERLITE_GROUP_ID: ${{ secrets.MAILERLITE_GROUP_ID }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          MODE: "single"
+          # Remitente
+          FROM_NAME:  ${{ secrets.FROM_NAME }}
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
+          # Endpoints Hugo
+          HUGO_SINGLE_ENDPOINT: ${{ secrets.HUGO_SINGLE_ENDPOINT }}
+          HUGO_DIGEST_ENDPOINT: ${{ secrets.HUGO_DIGEST_ENDPOINT }}
+          # Sitio
+          SITE_BASE_URL: ${{ secrets.SITE_BASE_URL }}
+          # Anthropic
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Modo
+          MODE:    single
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-        run: python .github/scripts/send_newsletter.py
+        run: python main.py

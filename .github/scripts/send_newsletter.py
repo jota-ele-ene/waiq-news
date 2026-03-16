@@ -1,7 +1,7 @@
 """
 send_newsletter.py
 ------------------
-Lee el contenido Hugo del repositorio jota-ele-ene/waiq-multi,
+Lee el contenido Hugo de un rel repositorio jota-ele-ene/waiq-multi,
 genera el HTML del newsletter y lo envía via MailerLite API.
 
 Variables de entorno requeridas:
