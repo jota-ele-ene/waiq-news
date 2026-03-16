@@ -1,0 +1,75 @@
+name: 📬 Newsletter Quincenal
+
+on:
+  schedule:
+    # Se ejecuta cada viernes; el job check-week decide si toca o no
+    - cron: "0 11 * * 5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no envía, solo muestra el resultado)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      force:
+        description: "Forzar envío aunque no toque semana"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+jobs:
+  check-week:
+    name: Comprobar si toca semana quincenal
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+
+    steps:
+      - id: check
+        name: Verificar semana par
+        run: |
+          WEEK=$(date +%V)
+          FORCED="${{ github.event.inputs.force }}"
+          echo "Semana del año: $WEEK"
+
+          if [[ "$FORCED" == "true" ]]; then
+            echo "⚡ Forzado manualmente."
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          elif (( WEEK % 2 == 0 )); then
+            echo "✅ Semana par → toca envío quincenal."
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "⏭️  Semana impar → no toca esta semana."
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+
+  send-biweekly:
+    name: Enviar newsletter quincenal
+    needs: check-week
+    if: needs.check-week.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout waiq-news
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instalar dependencias
+        run: pip install requests pyyaml
+
+      - name: Enviar newsletter
+        env:
+          MAILERLITE_API_KEY: ${{ secrets.MAILERLITE_API_KEY }}
+          MAILERLITE_GROUP_ID: ${{ secrets.MAILERLITE_GROUP_ID }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          MODE: "digest"
+          DAYS_BACK: "14"
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: python .github/scripts/send_newsletter.py

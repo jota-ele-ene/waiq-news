@@ -1,0 +1,41 @@
+name: 📬 Newsletter Semanal
+
+on:
+  schedule:
+    # Cada viernes a las 11:00 UTC (12:00 España hora invierno / 13:00 verano)
+    - cron: "0 11 * * 5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no envía, solo muestra el resultado)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+jobs:
+  send-weekly:
+    name: Enviar newsletter semanal
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout waiq-news
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instalar dependencias
+        run: pip install requests pyyaml
+
+      - name: Enviar newsletter
+        env:
+          MAILERLITE_API_KEY: ${{ secrets.MAILERLITE_API_KEY }}
+          MAILERLITE_GROUP_ID: ${{ secrets.MAILERLITE_GROUP_ID }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          MODE: "single"
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: python .github/scripts/send_newsletter.py
