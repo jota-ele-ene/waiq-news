@@ -23,5 +23,9 @@ env/
 # macOS
 .DS_Store
 
+# Datos de runs locales (generados en ejecución)
+data/
+
 # Outputs de prueba
 output_*.html
+data/

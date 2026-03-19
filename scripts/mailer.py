@@ -1,5 +1,9 @@
 """
-mailer.py — Crea y envía (o programa) campañas en MailerLite v3 API.
+mailer.py — Envía newsletters via Brevo (ex-SendinBlue) API v3.
+
+Lee el dict que devuelve html_builder.build_*() y decide el payload:
+  result["mode"] == "template"  →  templateId + params.body  (wrapper Brevo)
+  result["mode"] == "html"      →  htmlContent completo       (fallback)
 """
 
 import sys
@@ -8,78 +12,120 @@ from datetime import datetime
 import requests
 
 from scripts.config import (
-    MAILERLITE_BASE_URL,
-    MAILERLITE_HEADERS,
-    MAILERLITE_GROUP_ID,
+    BREVO_API_KEY,
+    BREVO_BASE_URL,
+    BREVO_HEADERS,
+    BREVO_LIST_ID,
+    BREVO_TEMPLATE_ID,
     FROM_NAME,
     FROM_EMAIL,
     DRY_RUN,
 )
 
 
-def send_campaign(subject: str, html: str) -> None:
+def create_campaign(subject: str, build_result: dict) -> dict:
     """
-    Crea una campaña en MailerLite y la envía inmediatamente.
-    Si DRY_RUN=true, imprime el resultado sin enviar nada.
+    Crea y envía una campaña en Brevo.
+    - subject       : asunto del email
+    - build_result  : dict devuelto por html_builder.build_single_html() o build_digest_html()
     """
+    timestamp = datetime.utcnow().isoformat()
+    mode      = build_result.get("mode", "html")
+
     if DRY_RUN:
-        print("\n" + "─" * 60)
-        print("🔍 DRY RUN — no se envía ninguna campaña.")
+        html_size = len(build_result.get("html", "")) or len(
+            build_result.get("params", {}).get("body", "")
+        )
+        result = {
+            "dry_run":     True,
+            "provider":    "brevo",
+            "mode":        mode,
+            "timestamp":   timestamp,
+            "subject":     subject,
+            "html_size":   html_size,
+            "from_name":   FROM_NAME,
+            "from_email":  FROM_EMAIL,
+            "list_id":     BREVO_LIST_ID,
+            "template_id": BREVO_TEMPLATE_ID,
+            "campaign_id": None,
+            "status":      "skipped (dry_run)",
+        }
+        print("\n" + "─" * 58)
+        print(f"🔍 DRY RUN — no se envía ninguna campaña.")
+        print(f"   Modo     : {mode} {'(plantilla Brevo #' + str(BREVO_TEMPLATE_ID) + ')' if mode == 'template' else '(HTML autónomo)'}")
         print(f"   Asunto   : {subject}")
-        print(f"   HTML     : {len(html):,} chars generados")
+        print(f"   HTML     : {html_size:,} chars")
         print(f"   Remitente: {FROM_NAME} <{FROM_EMAIL}>")
-        print(f"   Grupo    : {MAILERLITE_GROUP_ID}")
-        print("─" * 60 + "\n")
-        return
+        print(f"   Lista    : {BREVO_LIST_ID}")
+        print("─" * 58)
+        return result
 
     campaign_name = f"WAIQ Newsletter {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC"
 
-    # ── 1. Crear campaña ──────────────────────────────────────────────────────
+    # ── Construir payload según modo ──────────────────────────────────────────
     payload = {
-        "name": campaign_name,
-        "type": "regular",
-        "emails": [{
-            "subject":   subject,
-            "from_name": FROM_NAME,
-            "from":      FROM_EMAIL,
-            "content":   html,
-        }],
-        "groups": [MAILERLITE_GROUP_ID],
+        "name":       campaign_name,
+        "subject":    subject,
+        "sender":     {"name": FROM_NAME, "email": FROM_EMAIL},
+        "type":       "classic",
+        "recipients": {"listIds": [BREVO_LIST_ID]},
     }
 
-    print("📤 Creando campaña en MailerLite…")
+    if mode == "template" and BREVO_TEMPLATE_ID:
+        # Brevo inyecta params en la plantilla via {{ params.xxx }}
+        payload["templateId"] = BREVO_TEMPLATE_ID
+        payload["params"]     = build_result.get("params", {})
+        print(f"   📐 Modo plantilla → templateId={BREVO_TEMPLATE_ID}")
+    else:
+        # HTML completo autónomo
+        payload["htmlContent"] = build_result.get("html", "")
+        print(f"   📄 Modo HTML autónomo")
+
+    # ── 1. Crear campaña ──────────────────────────────────────────────────────
+    print(f"   POST {BREVO_BASE_URL}/emailCampaigns")
     try:
         resp = requests.post(
-            f"{MAILERLITE_BASE_URL}/campaigns",
-            headers=MAILERLITE_HEADERS,
+            f"{BREVO_BASE_URL}/emailCampaigns",
+            headers=BREVO_HEADERS,
             json=payload,
             timeout=20,
         )
         resp.raise_for_status()
     except requests.HTTPError as e:
-        print(f"❌ Error creando campaña: {e}", file=sys.stderr)
-        print(f"   Respuesta: {resp.text[:400]}", file=sys.stderr)
-        sys.exit(1)
-    except requests.RequestException as e:
-        print(f"❌ Error de red: {e}", file=sys.stderr)
+        print(f"❌ Error creando campaña en Brevo: {e}", file=sys.stderr)
+        print(f"   Respuesta: {resp.text[:500]}", file=sys.stderr)
         sys.exit(1)
 
-    campaign_id = resp.json()["data"]["id"]
+    create_response = resp.json()
+    campaign_id     = create_response["id"]
     print(f"   ✅ Campaña creada: {campaign_id}")
 
     # ── 2. Enviar inmediatamente ───────────────────────────────────────────────
-    print("🚀 Programando envío inmediato…")
+    send_url = f"{BREVO_BASE_URL}/emailCampaigns/{campaign_id}/sendNow"
+    print(f"   POST {send_url}")
     try:
-        resp2 = requests.post(
-            f"{MAILERLITE_BASE_URL}/campaigns/{campaign_id}/schedule",
-            headers=MAILERLITE_HEADERS,
-            json={"delivery": "now"},
-            timeout=20,
-        )
+        resp2 = requests.post(send_url, headers=BREVO_HEADERS, timeout=20)
         resp2.raise_for_status()
     except requests.HTTPError as e:
-        print(f"❌ Error al enviar: {e}", file=sys.stderr)
-        print(f"   Respuesta: {resp2.text[:400]}", file=sys.stderr)
+        print(f"❌ Error enviando campaña: {e}", file=sys.stderr)
+        print(f"   Respuesta: {resp2.text[:500]}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"   ✅ Campaña enviada correctamente → {campaign_name}")
+    print(f"   ✅ Campaña enviada: {campaign_name}")
+
+    return {
+        "dry_run":         False,
+        "provider":        "brevo",
+        "mode":            mode,
+        "timestamp":       timestamp,
+        "subject":         subject,
+        "from_name":       FROM_NAME,
+        "from_email":      FROM_EMAIL,
+        "list_id":         BREVO_LIST_ID,
+        "template_id":     BREVO_TEMPLATE_ID,
+        "campaign_id":     campaign_id,
+        "campaign_name":   campaign_name,
+        "status":          "sent",
+        "create_response": create_response,
+    }
+

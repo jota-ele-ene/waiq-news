@@ -1,9 +1,7 @@
 """
-ai_editor.py — Usa Claude (Anthropic) para generar el contenido editorial
-del newsletter digest a partir de una lista de URLs.
-
-La IA analiza dominios y slugs de las URLs para inferir temas, agruparlos
-y redactar un newsletter editorial en español con voz propia de WAIQ.
+ai_editor.py — Usa Claude para generar el newsletter digest editorial.
+Recibe el payload completo del endpoint (button_urls + articles con metadata)
+y genera las secciones temáticas agrupadas.
 """
 
 import json
@@ -15,120 +13,114 @@ import anthropic
 from scripts.config import ANTHROPIC_API_KEY, ANTHROPIC_MODEL
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
+def _extract_url_signals(data: dict) -> list[dict]:
+    """
+    Combina la metadata rica de 'articles' con las URLs de 'button_urls'.
+    Prioriza articles (tienen título, imagen, fuente).
+    """
+    articles    = data.get("articles", [])
+    button_urls = data.get("button_urls", [])
 
-def _extract_url_signals(urls: list[str]) -> list[dict]:
-    """
-    Extrae señales legibles de cada URL: dominio, path, slug inferido.
-    Limpia parámetros de tracking (utm_*, etc.)
-    """
+    # Indexar articles por URL
+    articles_by_url = {a["url"]: a for a in articles if a.get("url")}
+
     signals = []
-    for url in urls:
-        try:
-            parsed = urlparse(url)
-            domain = parsed.netloc.replace("www.", "")
-            # Limpiar path: quitar extensiones y separar por - /
-            path = parsed.path.rstrip("/")
-            slug_raw = path.split("/")[-1] if path else ""
-            # Convertir slug kebab-case a palabras legibles
-            readable = slug_raw.replace("-", " ").replace("_", " ").strip()
+    for url in button_urls:
+        if url in articles_by_url:
+            art = articles_by_url[url]
             signals.append({
-                "url":      url,
-                "domain":   domain,
-                "path":     path,
-                "readable": readable or path,
+                "url":    url,
+                "title":  art.get("title", ""),
+                "image":  art.get("image", ""),
+                "source": art.get("source", ""),
+                "domain": urlparse(url).netloc.replace("www.", ""),
             })
-        except Exception:
-            signals.append({"url": url, "domain": url, "path": "", "readable": url})
+        else:
+            parsed  = urlparse(url)
+            domain  = parsed.netloc.replace("www.", "")
+            slug    = parsed.path.rstrip("/").split("/")[-1]
+            readable = slug.replace("-", " ").replace("_", " ").strip()
+            signals.append({
+                "url":    url,
+                "title":  readable,
+                "image":  "",
+                "source": domain,
+                "domain": domain,
+            })
     return signals
 
 
-_SYSTEM_PROMPT = """Eres el editor de #WAIQ, un newsletter de referencia en español sobre 
+_SYSTEM_PROMPT = """Eres el editor de #WAIQ, newsletter de referencia en español sobre 
 tecnologías emergentes: Inteligencia Artificial, Blockchain/Web3 y Computación Cuántica, 
 con foco en Europa y España.
 
-Tu misión: analizar una lista de URLs (fuentes externas recopiladas como señales del radar 
-de WAIQ) y generar el contenido estructurado de un newsletter digest en JSON.
+Tu misión: analizar una lista de fuentes (con título, dominio y URL) y generar el 
+contenido estructurado de un newsletter digest en JSON.
 
 TONO: analítico, directo, con criterio propio. No neutro. WAIQ tiene voz.
-IDIOMA: español.
+IDIOMA: español (aunque las fuentes sean en inglés, el editorial va en español).
 AUDIENCIA: profesionales y líderes del sector tech en España y Europa.
 
-Responde ÚNICAMENTE con un objeto JSON válido, sin markdown, sin explicaciones."""
+Responde ÚNICAMENTE con JSON válido, sin markdown, sin explicaciones."""
 
 
-def _build_user_prompt(signals: list[dict], since_date: str) -> str:
-    signals_text = "\n".join(
-        f'- {s["domain"]} → {s["readable"]}  [url: {s["url"]}]'
+def _build_prompt(signals: list[dict], lang: str, days: int) -> str:
+    lines = "\n".join(
+        f'- [{s["source"] or s["domain"]}] {s["title"] or s["domain"]}  →  {s["url"]}'
         for s in signals
     )
-    return f"""Período cubierto: desde {since_date} hasta hoy.
-Fuentes recogidas ({len(signals)} URLs):
+    lang_label = "español" if lang == "es" else "inglés"
+    return f"""Período: últimos {days} días. Idioma del editorial: {lang_label}.
+Fuentes ({len(signals)}):
 
-{signals_text}
+{lines}
 
-Genera el contenido del newsletter digest con esta estructura JSON exacta:
+Genera el contenido del digest con esta estructura JSON exacta:
 
 {{
-  "subject": "Línea de asunto del email (max 60 chars, con emoji inicial)",
-  "preheader": "Texto preheader del email (max 90 chars)",
-  "editorial": "Párrafo editorial de apertura (3-4 frases, voz WAIQ, sin mencionar las URLs explícitamente)",
+  "subject": "Asunto del email (max 60 chars, emoji inicial)",
+  "preheader": "Preheader (max 90 chars)",
+  "editorial": "Párrafo editorial de apertura (3-4 frases, voz WAIQ)",
   "sections": [
     {{
       "title": "Título de la sección temática",
-      "emoji": "emoji representativo",
-      "summary": "Resumen editorial de 2-3 frases sobre lo que ocurre en este tema",
+      "emoji": "emoji",
+      "summary": "Resumen editorial 2-3 frases",
       "items": [
         {{
           "label": "Titular corto (max 80 chars)",
-          "url": "URL original exacta",
-          "domain": "dominio fuente"
+          "url": "URL EXACTA del listado",
+          "domain": "dominio",
+          "image": "URL imagen (copia exacta del campo image del input, vacío si no hay)"
         }}
       ]
     }}
   ],
-  "closing": "Frase de cierre editorial (1-2 frases, firma de WAIQ)"
+  "closing": "Frase de cierre (1-2 frases)"
 }}
 
-Agrupa las URLs en 2-4 secciones temáticas coherentes según los temas que detectes 
-(IA, Blockchain/Web3, Cuántica, Regulación, etc.). 
-Cada item debe usar la URL EXACTA del listado de fuentes. No inventes URLs.
-Prioriza calidad sobre cantidad: si una URL no encaja en ningún tema, omítela."""
+Agrupa en 2-4 secciones temáticas. Usa las URLs EXACTAS del input.
+El campo image debe copiarse exactamente tal como viene en el input (puede ser vacío)."""
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Función principal
-# ─────────────────────────────────────────────────────────────────────────────
+def generate_digest_content(data: dict, lang: str, days: int) -> dict:
+    client  = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    signals = _extract_url_signals(data)
 
-def generate_digest_content(urls: list[str], since_date: str) -> dict:
-    """
-    Llama a Claude para generar el contenido editorial del digest.
-    Devuelve el dict con subject, preheader, editorial, sections, closing.
-    """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    signals = _extract_url_signals(urls)
-
-    print(f"🤖 Generando contenido editorial con {ANTHROPIC_MODEL}…")
-    print(f"   Analizando {len(signals)} fuentes…")
+    print(f"🤖 Generando editorial con {ANTHROPIC_MODEL} [{lang}, {days}d, {len(signals)} fuentes]…")
 
     try:
         message = client.messages.create(
             model=ANTHROPIC_MODEL,
             max_tokens=4096,
             system=_SYSTEM_PROMPT,
-            messages=[
-                {"role": "user", "content": _build_user_prompt(signals, since_date)}
-            ],
+            messages=[{"role": "user", "content": _build_prompt(signals, lang, days)}],
         )
     except anthropic.APIError as e:
-        print(f"❌ Error en Anthropic API: {e}", file=sys.stderr)
+        print(f"❌ Error Anthropic API: {e}", file=sys.stderr)
         sys.exit(1)
 
     raw = message.content[0].text.strip()
-
-    # Limpiar posibles backticks si el modelo los añade
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
         raw = raw.rsplit("```", 1)[0]
@@ -136,11 +128,17 @@ def generate_digest_content(urls: list[str], since_date: str) -> dict:
     try:
         content = json.loads(raw)
     except json.JSONDecodeError as e:
-        print(f"❌ La IA no devolvió JSON válido: {e}", file=sys.stderr)
-        print(f"   Respuesta recibida:\n{raw[:500]}", file=sys.stderr)
+        print(f"❌ JSON inválido de la IA: {e}", file=sys.stderr)
+        print(f"   Respuesta:\n{raw[:500]}", file=sys.stderr)
         sys.exit(1)
 
-    sections = content.get("sections", [])
-    total_items = sum(len(s.get("items", [])) for s in sections)
-    print(f"   ✅ {len(sections)} secciones generadas, {total_items} items.")
+    # Enriquecer items con imágenes del input si la IA no las propagó
+    signals_by_url = {s["url"]: s for s in signals}
+    for section in content.get("sections", []):
+        for item in section.get("items", []):
+            if not item.get("image"):
+                item["image"] = signals_by_url.get(item.get("url", ""), {}).get("image", "")
+
+    total = sum(len(s.get("items", [])) for s in content.get("sections", []))
+    print(f"   ✅ {len(content.get('sections', []))} secciones, {total} items.")
     return content

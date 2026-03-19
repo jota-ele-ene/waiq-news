@@ -154,3 +154,60 @@ waiq-news/
         ├── newsletter-biweekly.yml
         └── newsletter-monthly.yml
 ```
+
+---
+
+## Testing local
+
+### Setup inicial
+
+```bash
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env           # rellenar con tus valores
+```
+
+### Prueba rápida con mock server (todo en un comando)
+
+```bash
+bash test_local.sh
+```
+
+Esto arranca automáticamente el mock server Hugo en `localhost:1313`, ejecuta single y digest en dry-run, y lo para al terminar. Solo necesitas `ANTHROPIC_API_KEY` real en el `.env` (el resto puede ser ficticio para dry-run).
+
+### Prueba manual paso a paso
+
+**Terminal 1 — Mock server:**
+```bash
+python mock_server.py
+```
+
+**Terminal 2 — Newsletter:**
+```bash
+# Con endpoints mock
+export HUGO_SINGLE_ENDPOINT=http://localhost:1313/api/newsletter/single
+export HUGO_DIGEST_ENDPOINT=http://localhost:1313/api/newsletter/digest
+
+python main.py --mode single --dry-run
+python main.py --mode digest --since 2026-03-01 --dry-run
+```
+
+### Ver el HTML renderizado
+
+Añade esto en `main.py` justo antes de `send_campaign(subject, html)`:
+
+```python
+with open("output_preview.html", "w") as f:
+    f.write(html)
+print("💾 HTML guardado en output_preview.html")
+```
+
+Luego abre `output_preview.html` directamente en el navegador.
+
+### Probar en GitHub Actions sin esperar al viernes
+
+1. Ve a **Actions** → selecciona el workflow
+2. Haz clic en **Run workflow**
+3. Activa `dry_run = true`
+4. Para digest: rellena `since_date` y activa `force = true`

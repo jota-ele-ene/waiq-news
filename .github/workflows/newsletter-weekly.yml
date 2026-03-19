@@ -2,12 +2,17 @@ name: 📬 Newsletter Semanal
 
 on:
   schedule:
-    # Cada viernes a las 11:00 UTC (12:00 España invierno / 13:00 verano)
-    - cron: "0 11 * * 5"
+    - cron: "0 11 * * 5"   # Viernes 11:00 UTC
   workflow_dispatch:
     inputs:
+      lang:
+        description: "Idioma"
+        required: false
+        default: "es"
+        type: choice
+        options: ["es", "en"]
       dry_run:
-        description: "Dry run — genera HTML sin enviar"
+        description: "Dry run (no envía)"
         required: false
         default: "false"
         type: choice
@@ -15,38 +20,28 @@ on:
 
 jobs:
   send-weekly:
-    name: Enviar newsletter semanal (single)
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python 3.12
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-
-      - name: Instalar dependencias
-        run: pip install -r requirements.txt
-
-      - name: Ejecutar newsletter
+      - run: pip install -r requirements.txt
+      - name: Enviar newsletter semanal
         env:
-          # MailerLite
-          MAILERLITE_API_KEY:  ${{ secrets.MAILERLITE_API_KEY }}
-          MAILERLITE_GROUP_ID: ${{ secrets.MAILERLITE_GROUP_ID }}
-          # Remitente
-          FROM_NAME:  ${{ secrets.FROM_NAME }}
-          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
-          # Endpoints Hugo
-          HUGO_SINGLE_ENDPOINT: ${{ secrets.HUGO_SINGLE_ENDPOINT }}
-          HUGO_DIGEST_ENDPOINT: ${{ secrets.HUGO_DIGEST_ENDPOINT }}
-          # Sitio
-          SITE_BASE_URL: ${{ secrets.SITE_BASE_URL }}
-          # Anthropic
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Modo
+          BREVO_API_KEY:              ${{ secrets.BREVO_API_KEY }}
+          BREVO_LIST_ID:              ${{ secrets.BREVO_LIST_ID }}
+          BREVO_TEMPLATE_ID:          ${{ secrets.BREVO_TEMPLATE_ID }}
+          FROM_NAME:                  ${{ secrets.FROM_NAME }}
+          FROM_EMAIL:                 ${{ secrets.FROM_EMAIL }}
+          HUGO_SINGLE_ENDPOINT_ES:    ${{ secrets.HUGO_SINGLE_ENDPOINT_ES }}
+          HUGO_SINGLE_ENDPOINT_EN:    ${{ secrets.HUGO_SINGLE_ENDPOINT_EN }}
+          HUGO_DIGEST_ENDPOINT_ES:    ${{ secrets.HUGO_DIGEST_ENDPOINT_ES }}
+          HUGO_DIGEST_ENDPOINT_EN:    ${{ secrets.HUGO_DIGEST_ENDPOINT_EN }}
+          SITE_BASE_URL:              ${{ secrets.SITE_BASE_URL }}
+          ANTHROPIC_API_KEY:          ${{ secrets.ANTHROPIC_API_KEY }}
           MODE:    single
+          LANG:    ${{ github.event.inputs.lang || 'es' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: python main.py
