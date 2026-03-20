@@ -362,7 +362,7 @@ def _single_body(post: dict, lang: str) -> str:
     """
 
 def build_single_html(post: dict, lang: str = "es") -> dict:
-    subject   = f"✦ {post.get('title', '#WAIQ Newsletter')}"
+    subject   = f"✦ {post.get('title', 'The WAIQ State of Play')}"
     preheader = post.get("description", "")[:90]
     body      = _single_body(post, lang)
 

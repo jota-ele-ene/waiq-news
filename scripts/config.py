@@ -33,7 +33,6 @@ def _optional(name: str, default: str = "") -> str:
 
 # ── Brevo ─────────────────────────────────────────────────────────────────────
 BREVO_API_KEY   = _require("BREVO_API_KEY")
-BREVO_LIST_ID   = int(_require("BREVO_LIST_ID"))
 BREVO_BASE_URL  = "https://api.brevo.com/v3"
 BREVO_HEADERS   = {
     "api-key":      BREVO_API_KEY,
