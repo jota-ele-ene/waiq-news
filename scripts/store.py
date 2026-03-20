@@ -34,12 +34,13 @@ def init_run(mode: str, params: dict) -> Path:
     run_dir.mkdir(parents=True, exist_ok=True)
 
     meta = {
-        "run_id":            run_id,
-        "mode":              mode,
-        "since":             params.get("since", ""),
-        "dry_run":           params.get("dry_run", False),
-        "started_at":        datetime.utcnow().isoformat(),
-        "phases_completed":  [],
+        "run_id":           run_id,
+        "mode":             mode,
+        "lang":             params.get("lang", "es"),   # ← añadir
+        "days":             params.get("days", 0),      # ← añadir
+        "dry_run":          params.get("dry_run", False),
+        "started_at":       datetime.utcnow().isoformat(),
+        "phases_completed": [],
     }
     _write(run_dir / "meta.json", meta)
 

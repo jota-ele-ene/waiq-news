@@ -1,9 +1,11 @@
 """
-mailer.py — Envía newsletters via Brevo (ex-SendinBlue) API v3.
+mailer.py — Envía newsletters via Brevo API v3.
+El segmento de destino se resuelve por lang + mode + days.
 
-Lee el dict que devuelve html_builder.build_*() y decide el payload:
-  result["mode"] == "template"  →  templateId + params.body  (wrapper Brevo)
-  result["mode"] == "html"      →  htmlContent completo       (fallback)
+Segmentos:
+  single      → ES_1  / EN_1
+  digest 15d  → ES_15 / EN_15
+  digest 30d  → ES_30 / EN_30
 """
 
 import sys
@@ -15,73 +17,67 @@ from scripts.config import (
     BREVO_API_KEY,
     BREVO_BASE_URL,
     BREVO_HEADERS,
-    BREVO_LIST_ID,
     BREVO_TEMPLATE_ID,
+    BREVO_SEGMENTS,   # ← solo este
     FROM_NAME,
     FROM_EMAIL,
     DRY_RUN,
 )
 
+def _resolve_segment(lang: str, mode: str, days: int) -> int:
+    days_key = 1 if mode == "single" else days
+    key = f"{lang.upper()}_{days_key}"
+    segment_id = BREVO_SEGMENTS.get(key)
+    if not segment_id:
+        print(f"❌ Segmento '{key}' no encontrado en BREVO_SEGMENTS", file=sys.stderr)
+        print(f"   Disponibles: {list(BREVO_SEGMENTS.keys())}", file=sys.stderr)
+        sys.exit(1)
+    return segment_id
 
-def create_campaign(subject: str, build_result: dict) -> dict:
-    """
-    Crea y envía una campaña en Brevo.
-    - subject       : asunto del email
-    - build_result  : dict devuelto por html_builder.build_single_html() o build_digest_html()
-    """
-    timestamp = datetime.utcnow().isoformat()
-    mode      = build_result.get("mode", "html")
+
+def create_campaign(subject: str, build_result: dict,
+                    lang: str, mode: str, days: int = 0) -> dict:
+    timestamp  = datetime.utcnow().isoformat()
+    segment_id = _resolve_segment(lang, mode, days)
 
     if DRY_RUN:
-        html_size = len(build_result.get("html", "")) or len(
-            build_result.get("params", {}).get("body", "")
-        )
-        result = {
-            "dry_run":     True,
-            "provider":    "brevo",
-            "mode":        mode,
-            "timestamp":   timestamp,
-            "subject":     subject,
-            "html_size":   html_size,
-            "from_name":   FROM_NAME,
-            "from_email":  FROM_EMAIL,
-            "list_id":     BREVO_LIST_ID,
-            "template_id": BREVO_TEMPLATE_ID,
-            "campaign_id": None,
-            "status":      "skipped (dry_run)",
-        }
         print("\n" + "─" * 58)
-        print(f"🔍 DRY RUN — no se envía ninguna campaña.")
-        print(f"   Modo     : {mode} {'(plantilla Brevo #' + str(BREVO_TEMPLATE_ID) + ')' if mode == 'template' else '(HTML autónomo)'}")
-        print(f"   Asunto   : {subject}")
-        print(f"   HTML     : {html_size:,} chars")
-        print(f"   Remitente: {FROM_NAME} <{FROM_EMAIL}>")
-        print(f"   Lista    : {BREVO_LIST_ID}")
+        print("🔍 DRY RUN — no se envía ninguna campaña.")
+        print(f"   Asunto    : {subject}")
+        print(f"   Segmento  : {segment_id} (lang={lang}, mode={mode}, days={days})")
+        print(f"   Modo      : {build_result.get('mode')}")
+        print(f"   Remitente : {FROM_NAME} <{FROM_EMAIL}>")
         print("─" * 58)
-        return result
+        return {
+            "dry_run":    True,
+            "provider":   "brevo",
+            "timestamp":  timestamp,
+            "subject":    subject,
+            "segment_id": segment_id,
+            "lang":       lang,
+            "mode":       mode,
+            "days":       days,
+            "status":     "skipped (dry_run)",
+        }
 
-    campaign_name = f"WAIQ Newsletter {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC"
+    campaign_name = f"WAIQ {lang.upper()} {mode} {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC"
 
-    # ── Construir payload según modo ──────────────────────────────────────────
     payload = {
         "name":       campaign_name,
         "subject":    subject,
         "sender":     {"name": FROM_NAME, "email": FROM_EMAIL},
         "type":       "classic",
-        "recipients": {"listIds": [BREVO_LIST_ID]},
+        "recipients": {"segmentIds": [segment_id]},
     }
 
-    if mode == "template" and BREVO_TEMPLATE_ID:
-        # Brevo inyecta params en la plantilla via {{ params.xxx }}
+    if build_result.get("mode") == "template" and BREVO_TEMPLATE_ID:
         payload["templateId"] = BREVO_TEMPLATE_ID
         payload["params"]     = build_result.get("params", {})
-        print(f"   📐 Modo plantilla → templateId={BREVO_TEMPLATE_ID}")
+        print(f"   📐 Plantilla templateId={BREVO_TEMPLATE_ID}")
     else:
-        # HTML completo autónomo
         payload["htmlContent"] = build_result.get("html", "")
-        print(f"   📄 Modo HTML autónomo")
+        print(f"   📄 HTML autónomo")
 
-    # ── 1. Crear campaña ──────────────────────────────────────────────────────
     print(f"   POST {BREVO_BASE_URL}/emailCampaigns")
     try:
         resp = requests.post(
@@ -92,40 +88,34 @@ def create_campaign(subject: str, build_result: dict) -> dict:
         )
         resp.raise_for_status()
     except requests.HTTPError as e:
-        print(f"❌ Error creando campaña en Brevo: {e}", file=sys.stderr)
+        print(f"❌ Error creando campaña: {e}", file=sys.stderr)
         print(f"   Respuesta: {resp.text[:500]}", file=sys.stderr)
         sys.exit(1)
 
-    create_response = resp.json()
-    campaign_id     = create_response["id"]
+    campaign_id = resp.json()["id"]
     print(f"   ✅ Campaña creada: {campaign_id}")
 
-    # ── 2. Enviar inmediatamente ───────────────────────────────────────────────
     send_url = f"{BREVO_BASE_URL}/emailCampaigns/{campaign_id}/sendNow"
-    print(f"   POST {send_url}")
     try:
         resp2 = requests.post(send_url, headers=BREVO_HEADERS, timeout=20)
         resp2.raise_for_status()
     except requests.HTTPError as e:
-        print(f"❌ Error enviando campaña: {e}", file=sys.stderr)
+        print(f"❌ Error enviando: {e}", file=sys.stderr)
         print(f"   Respuesta: {resp2.text[:500]}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"   ✅ Campaña enviada: {campaign_name}")
+    print(f"   ✅ Enviado a segmento {segment_id}: {campaign_name}")
 
     return {
         "dry_run":         False,
         "provider":        "brevo",
-        "mode":            mode,
         "timestamp":       timestamp,
         "subject":         subject,
-        "from_name":       FROM_NAME,
-        "from_email":      FROM_EMAIL,
-        "list_id":         BREVO_LIST_ID,
-        "template_id":     BREVO_TEMPLATE_ID,
+        "segment_id":      segment_id,
+        "lang":            lang,
+        "mode":            mode,
+        "days":            days,
         "campaign_id":     campaign_id,
         "campaign_name":   campaign_name,
         "status":          "sent",
-        "create_response": create_response,
     }
-

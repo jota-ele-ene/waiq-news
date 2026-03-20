@@ -325,8 +325,8 @@ def _single_body(post: dict, lang: str) -> str:
     ) if date_str else ""
 
     body_block = (
-        f'<div style="font-family:{FONT};font-size:14px;line-height:1.75;'
-        f'color:rgba(2,21,71,0.85);margin:0 0 28px;text-align:justify;">'
+        f'<div style="font-family:{FONT};'
+        f'margin:0 0 28px;text-align:justify;">'
         f'{body_html}</div>'
     ) if body_html else ""
 
@@ -344,7 +344,7 @@ def _single_body(post: dict, lang: str) -> str:
 
     {date_block}
 
-    <p style="font-family:{FONT};font-size:15px;line-height:1.75;
+    <p style="font-family:{FONT};font-sstyle:italic;
       color:{NAVY};margin:0 0 24px;text-align:justify;
       border-left:3px solid {CYAN};padding-left:14px;">
       {description}

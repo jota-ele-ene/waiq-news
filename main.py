@@ -133,15 +133,19 @@ def phase_send(run_dir: Path) -> None:
         sys.exit(1)
 
     campaign_data = load_campaign(run_dir)
-    subject      = campaign_data["subject"]
-    build_result = campaign_data.get("build_result") or {
+    build_result  = campaign_data.get("build_result") or {
         "mode": "html", "html": campaign_data["html"]
     }
-    result = create_campaign(subject, build_result)
+
+    # lang, mode y days vienen del meta del run (guardados en init_run)
+    lang = meta.get("lang", "es")
+    mode = meta.get("mode", "single")
+    days = int(meta.get("days", 0))
+
+    result = create_campaign(campaign_data["subject"], build_result, lang, mode, days)
     save_send_result(run_dir, result)
     mark_phase_done(run_dir, "send")
     print("   ✅ send completado.")
-
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 

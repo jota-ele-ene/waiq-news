@@ -31,7 +31,7 @@ jobs:
       - name: Enviar newsletter semanal
         env:
           BREVO_API_KEY:              ${{ secrets.BREVO_API_KEY }}
-          BREVO_LIST_ID:              ${{ secrets.BREVO_LIST_ID }}
+          BREVO_SEGMENTS:             ${{ secrets.BREVO_SEGMENTS }}
           BREVO_TEMPLATE_ID:          ${{ secrets.BREVO_TEMPLATE_ID }}
           FROM_NAME:                  ${{ secrets.FROM_NAME }}
           FROM_EMAIL:                 ${{ secrets.FROM_EMAIL }}

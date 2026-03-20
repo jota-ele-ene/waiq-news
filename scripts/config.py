@@ -43,6 +43,14 @@ BREVO_HEADERS   = {
 BREVO_TEMPLATE_ID = _optional("BREVO_TEMPLATE_ID", "")
 BREVO_TEMPLATE_ID = int(BREVO_TEMPLATE_ID) if BREVO_TEMPLATE_ID else None
 
+# Segmentos por idioma+modo+días
+# Segmentos: "ES_1:101,EN_1:102,ES_15:103,EN_15:104,ES_30:105,EN_30:106"
+_segments_raw = _require("BREVO_SEGMENTS")
+BREVO_SEGMENTS = {}
+for pair in _segments_raw.split(","):
+    key, val = pair.strip().split(":")
+    BREVO_SEGMENTS[key.strip()] = int(val.strip())
+
 # ── Remitente ─────────────────────────────────────────────────────────────────
 FROM_NAME  = _optional("FROM_NAME",  "#WAIQ")
 FROM_EMAIL = _optional("FROM_EMAIL", "hello@waiq.technology")
