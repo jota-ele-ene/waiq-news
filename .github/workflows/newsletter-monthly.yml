@@ -56,15 +56,15 @@ jobs:
       - name: Enviar newsletter mensual
         env:
           BREVO_API_KEY:              ${{ secrets.BREVO_API_KEY }}
-          BREVO_LIST_ID:              ${{ secrets.BREVO_LIST_ID }}
-          BREVO_TEMPLATE_ID:          ${{ secrets.BREVO_TEMPLATE_ID }}
-          FROM_NAME:                  ${{ secrets.FROM_NAME }}
-          FROM_EMAIL:                 ${{ secrets.FROM_EMAIL }}
-          HUGO_SINGLE_ENDPOINT_ES:    ${{ secrets.HUGO_SINGLE_ENDPOINT_ES }}
-          HUGO_SINGLE_ENDPOINT_EN:    ${{ secrets.HUGO_SINGLE_ENDPOINT_EN }}
-          HUGO_DIGEST_ENDPOINT_ES:    ${{ secrets.HUGO_DIGEST_ENDPOINT_ES }}
-          HUGO_DIGEST_ENDPOINT_EN:    ${{ secrets.HUGO_DIGEST_ENDPOINT_EN }}
-          SITE_BASE_URL:              ${{ secrets.SITE_BASE_URL }}
+          BREVO_SEGMENTS:             ${{ vars.BREVO_SEGMENTS }}
+          BREVO_TEMPLATE_ID:          ${{ vars.BREVO_TEMPLATE_ID }}
+          FROM_NAME:                  ${{ vars.FROM_NAME }}
+          FROM_EMAIL:                 ${{ vars.FROM_EMAIL }}
+          HUGO_SINGLE_ENDPOINT_ES:    ${{ vars.HUGO_SINGLE_ENDPOINT_ES }}
+          HUGO_SINGLE_ENDPOINT_EN:    ${{ vars.HUGO_SINGLE_ENDPOINT_EN }}
+          HUGO_DIGEST_ENDPOINT_ES:    ${{ vars.HUGO_DIGEST_ENDPOINT_ES }}
+          HUGO_DIGEST_ENDPOINT_EN:    ${{ vars.HUGO_DIGEST_ENDPOINT_EN }}
+          SITE_BASE_URL:              ${{ vars.SITE_BASE_URL }}
           ANTHROPIC_API_KEY:          ${{ secrets.ANTHROPIC_API_KEY }}
           MODE:    digest
           LANG:    ${{ github.event.inputs.lang || 'es' }}
