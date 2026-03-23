@@ -39,8 +39,10 @@ BREVO_HEADERS   = {
     "Content-Type": "application/json",
     "Accept":       "application/json",
 }
-BREVO_TEMPLATE_ID = _optional("BREVO_TEMPLATE_ID", "")
-BREVO_TEMPLATE_ID = int(BREVO_TEMPLATE_ID) if BREVO_TEMPLATE_ID else None
+BREVO_TEMPLATE_ID_ES = _optional("BREVO_TEMPLATE_ID_ES", "")
+BREVO_TEMPLATE_ID_ES = int(BREVO_TEMPLATE_ID_ES) if BREVO_TEMPLATE_ID_ES else None
+BREVO_TEMPLATE_ID_EN = _optional("BREVO_TEMPLATE_ID_EN", "")
+BREVO_TEMPLATE_ID_EN = int(BREVO_TEMPLATE_ID_EN) if BREVO_TEMPLATE_ID_EN else None
 
 # Segmentos por idioma+modo+días
 # Segmentos: "ES_1:101,EN_1:102,ES_15:103,EN_15:104,ES_30:105,EN_30:106"
